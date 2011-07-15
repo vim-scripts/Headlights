@@ -1,132 +1,94 @@
-" Headlights is a Vim plugin that provides a TextMate-like 'Bundles' menu. See
-" README.mkd for details.
+" Headlights - Know Thy Bundles.
+" Version: 1.2
+" Home: <www.vim.org/scripts/script.php?script_id=3455>
+" Development:	<github.com/mbadran/headlights>
+" Maintainer:	Mohammed Badran <mebadran _AT_ gmail>
 
-" NOTE: You may override the below values in your vimrc
-if has("gui_running")
-  " The menu root. You can set this to the name of an existing menu, such as
-  " 'Plugin'.
-  let g:headlights_root = "Bundles"
+" boilerplate {{{1
 
-  " Alphabetic labeling of menu items
-  let g:headlights_spillover = 1
-
-  " The threshhold after which the menu is alphabetically labeled
-  let g:headlights_threshhold = 30
-
-  " Debug mode. Enable to debug any errors or performance issues.
-  " IMPORTANT: set this to 0 when you're done, otherwise log files will be
-  " generated every time you load a Vim instance.
-  let g:headlights_debug = 0
-
-  " Individual menu components. Enable or disable to preference. (Autocmds are
-  " broken and disabled by default.)
-  let g:headlights_commands = 1
-  let g:headlights_mappings = 1
-  let g:headlights_abbreviations = 1
-  let g:headlights_functions = 1
-  let g:headlights_autocmds = 0
-
-  autocmd GUIEnter * call s:AttachMenus()
+if exists('g:loaded_headlights') || &cp
+  finish
 endif
 
-" returns the output of a vim command
-function! s:GetCommandOutput(command)
+if v:version < 700 || !has('python')
+  echoerr 'Headlights requires Vim 7+ compiled with Python 2.6+ support.'
+  " (it's too much trouble to check for the Python version)
+  finish
+endif
+
+let g:loaded_headlights = 1
+
+let s:save_cpo = &cpo
+set cpo&vim
+
+" configuration {{{1
+
+" only commands and mappings are enabled by default
+let s:use_plugin_menu = exists('g:headlights_use_plugin_menu')? g:headlights_use_plugin_menu : 0
+let s:show_files = exists('g:headlights_show_files')? g:headlights_show_files : 0
+let s:show_commands = exists('g:headlights_show_commands')? g:headlights_show_commands : 1
+let s:show_mappings = exists('g:headlights_show_mappings')? g:headlights_show_mappings : 1
+let s:show_abbreviations = exists('g:headlights_show_abbreviations')? g:headlights_show_abbreviations : 0
+let s:show_functions = exists('g:headlights_show_functions')? g:headlights_show_functions : 0
+let s:debug_mode = exists('g:headlights_debug_mode')? g:headlights_debug_mode : 0
+
+let s:menu_root = s:use_plugin_menu? 'Plugin.headlights' : 'Bundles'
+
+let s:scriptdir = expand("<sfile>:h") . '/'
+
+" action {{{1
+
+autocmd GUIEnter,BufEnter,FileType * call s:RequestVimMenus()
+
+" imports are done here for performance reasons
+python import vim, time, sys, os, re
+
+function! s:GetVimCommandOutput(command) " {{{1
   " initialise to a blank value in case the command throws a vim error
   " (try-catch doesn't work properly here, for some reason)
-  let l:out = ""
+  let l:output = ''
 
-  redir => l:out
+  redir => l:output
     execute "silent verbose " . a:command
   redir END
 
-  return l:out
+  return l:output
 endfunction
 
 " prepares the raw bundle data to be transformed into vim menus
-function! s:InitBundleData()
-  " all categories are disabled by default
-  let s:commands = ""
-  let s:mappings = ""
-  let s:functions = ""
-  let s:abbreviations = ""
-  let s:autocmds = ""
-
-  let s:scriptnames = s:GetCommandOutput("scriptnames")
-
-  if (g:headlights_commands)
-    let s:commands = s:GetCommandOutput("command")
-  endif
-
-  if (g:headlights_mappings)
-    let s:mappings = s:GetCommandOutput("map")
-  endif
-
-  if (g:headlights_functions)
-    let s:functions = s:GetCommandOutput("function")
-  endif
-
-  if (g:headlights_abbreviations)
-    let s:abbreviations = s:GetCommandOutput("abbreviate")
-  endif
-
-  if (has("autocmd") && g:headlights_autocmds)
-    let s:autocmds = s:GetCommandOutput("autocmd")
-  endif
+function! s:InitBundleData() " {{{1
+  let s:scriptnames = s:GetVimCommandOutput('scriptnames')
+  let s:commands = s:show_commands? s:GetVimCommandOutput('command') : ''
+	let s:mappings = s:show_mappings? s:GetVimCommandOutput('map') . s:GetVimCommandOutput('map!') : ''
+	let s:abbreviations = s:show_abbreviations? s:GetVimCommandOutput('abbreviate') : ''
+	let s:functions = s:show_functions? s:GetVimCommandOutput('function') : ''
 endfunction
 
-" enables a top separator if the menu root previously exists
-function! s:GetTopSeparator()
-  try
-    call s:GetCommandOutput("amenu " . g:headlights_root)
-  catch /E329/
-    " menu doesn't exist
-    return 0
-  endtry
-  return 1
+" requests the bundle menus from the helper python script
+" (minimise python spaghetti)
+function! s:RequestVimMenus() " {{{1
+	" time the execution of the vim code
+	python time_start = time.time()
+
+	" prepare the raw bundle data
+	call s:InitBundleData()
+
+	" load helper python script
+  execute 'pyfile ' . s:scriptdir . 'headlights.py'
+
+	" initialise an instance of the helper script
+	python headlights = Headlights(
+			\ menu_root=vim.eval("s:menu_root"),
+			\ debug_mode=vim.eval("s:debug_mode"),
+			\ vim_time=time.time() - time_start,
+			\ enable_files=vim.eval("s:show_files"),
+			\ scriptnames=vim.eval("s:scriptnames"),
+			\ commands=vim.eval("s:commands"),
+			\ mappings=vim.eval("s:mappings"),
+			\ abbreviations=vim.eval("s:abbreviations"),
+			\ functions=vim.eval("s:functions"))
 endfunction
 
-" attaches the bundle menus to GVim/MacVim
-" (python spaghetti kept minimal)
-function! s:AttachMenus()
-  python import vim, time, traceback
+" boilerplate {{{1
 
-  " time the execution of the vim code
-  python vim.command("let l:vim_timer = %f" % time.time())
-
-  " prepare the raw bundle data
-  call s:InitBundleData()
-
-  " load helper python script
-  let l:scriptdir = matchlist(s:scriptnames, '\d\+:\s\+\([^ ]\+\)headlights.vim')[1]
-  execute "pyfile " . l:scriptdir . "headlights.py"
-
-  python << endpython
-
-# initialise an instance of the helper script
-headlights = Headlights(
-    root=vim.eval("g:headlights_root"),
-    spillover=vim.eval("g:headlights_spillover"),
-    threshhold=vim.eval("g:headlights_threshhold"),
-    topseparator=vim.eval("s:GetTopSeparator()"),
-    debug=vim.eval("g:headlights_debug"),
-    vim_timer=vim.eval("l:vim_timer"))
-
-try:
-    # get the menu commands from the helper script
-    menu_commands = headlights.get_menu_commands(
-        scriptnames=vim.eval("s:scriptnames"),
-        commands=vim.eval("s:commands"),
-        mappings=vim.eval("s:mappings"),
-        abbreviations=vim.eval("s:abbreviations"),
-        functions=vim.eval("s:functions"),
-        autocmds=vim.eval("s:autocmds"))
-
-    # run the menu commands to attach the script menus
-    [vim.command(menu_cmd) for menu_cmd in menu_commands]
-
-except:
-    vim.command("echoerr('Headlights Exception: %s')" % traceback.format_exc())
-
-endpython
-
-endfunction
+let &cpo = s:save_cpo

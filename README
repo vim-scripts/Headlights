@@ -1,11 +1,15 @@
 This is a mirror of http://www.vim.org/scripts/script.php?script_id=3455
 
-Headlights is a Vim plugin that creates a TextMate like Bundles menu.
+Headlights adds a 'Bundles' menu to Vim, revealing your bundles (aka. plugins) and the features they provide.
 
-Headlights sheds light on what plugins are installed and how to use them. It creates a menu for each plugin, scraping together docs, commands, mappings, abbreviations, functions, and script files.
+Headlights creates a menu for each _currently loaded_ bundle, grouping together docs, commands, mappings, abbreviations, functions, and script files.
 
-Combined with a powerful bundle manager like Vundle, Headlights will improve your Vim user experience.
+Combined with a powerful bundle manager, Headlights will improve your Vim user experience -- nay, your quality of life.
 
 Here, have a screenshot: https://github.com/mbadran/headlights/raw/master/headlights_ss.png
 
-See the GitHub repository for more details: https://github.com/mbadran/headlights
+For development activity, see the GitHub repository: https://github.com/mbadran/headlights
+
+For further reading, see the Headlights help menu:
+
+    Bundles > a - i > headlights > Help
