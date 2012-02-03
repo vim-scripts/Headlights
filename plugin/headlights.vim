@@ -1,5 +1,5 @@
 " Headlights - Know Thy Bundles.
-" Version: 1.3
+" Version: 1.4
 " Home: <www.vim.org/scripts/script.php?script_id=3455>
 " Development:	<github.com/mbadran/headlights>
 " Maintainer:	Mohammed Badran <mebadran _AT_ gmail>
@@ -10,9 +10,15 @@ if exists('g:loaded_headlights') || &cp
   finish
 endif
 
-if v:version < 700 || !has('python')
+try
+  python import vim, sys
+  python if (sys.version_info[0:2]) < (2, 6): vim.command("let s:invalid_python = 1")
+catch /E319/    " no python
+  let s:invalid_python = 1
+endtry
+
+if v:version < 700 || exists('s:invalid_python')
   echomsg 'Headlights requires Vim 7+ compiled with Python 2.6+ support.'
-  " (it's too much trouble to check for the python version)
   finish
 endif
 
@@ -23,14 +29,16 @@ set cpo&vim
 
 " configuration {{{1
 
-" only enable commands and mappings by default
+" only enable commands, mappings, and smart menus by default
 let s:use_plugin_menu = exists('g:headlights_use_plugin_menu')? g:headlights_use_plugin_menu : 0
 let s:show_files = exists('g:headlights_show_files')? g:headlights_show_files : 0
 let s:show_commands = exists('g:headlights_show_commands')? g:headlights_show_commands : 1
 let s:show_mappings = exists('g:headlights_show_mappings')? g:headlights_show_mappings : 1
 let s:show_abbreviations = exists('g:headlights_show_abbreviations')? g:headlights_show_abbreviations : 0
 let s:show_functions = exists('g:headlights_show_functions')? g:headlights_show_functions : 0
+let s:show_highlights = exists('g:headlights_show_highlights')? g:headlights_show_highlights : 0
 let s:show_load_order = exists('g:headlights_show_load_order')? g:headlights_show_load_order : 0
+let s:smart_menus = exists('g:headlights_smart_menus')? g:headlights_smart_menus : 1
 let s:debug_mode = exists('g:headlights_debug_mode')? g:headlights_debug_mode : 0
 
 let s:menu_root = s:use_plugin_menu? 'Plugin.headlights' : 'Bundles'
@@ -39,12 +47,13 @@ let s:scriptdir = expand("<sfile>:h") . '/'
 
 " pyargs {{{1
 
+" do one-off python stuff here, for performance reasons
+
 python << endpython
 
-# do imports here, for performance reasons
-import vim, time, sys, os, re
+import time, os, re
 
-# initialise python globals as script args, for performance reasons
+# initialise python globals as script args
 
 MODE_MAP = {
     " ": "Normal, Visual, Select, Operator-pending",
@@ -128,9 +137,43 @@ SCRIPTNAME_PATTERN = re.compile(r'''
     $
     ''', re.VERBOSE)
 
+HIGHLIGHT_PATTERN = re.compile(r'''
+    ^
+    (?P<group>\w+)?
+    \\s+
+    xxx
+    \\s+
+    (?P<arguments>.+)
+    $
+    ''', re.VERBOSE | re.IGNORECASE)
+
+# TODO: review/find other standard vim/plugin dir
+VIM_DIR_PATTERNS = [
+    re.compile(r".+/after(/.*)?$", re.IGNORECASE),
+    re.compile(r".+/autoload(/.*)?$", re.IGNORECASE),
+    re.compile(r".+/colors$", re.IGNORECASE),
+    re.compile(r".+/compiler$", re.IGNORECASE),
+    #re.compile(r".+/doc$", re.IGNORECASE),
+    re.compile(r".+/ftdetect$", re.IGNORECASE),
+    re.compile(r".+/ftplugin(/.*)?$", re.IGNORECASE),
+    re.compile(r".+/function$", re.IGNORECASE),         # not a standard vim dir
+    re.compile(r".+/indent$", re.IGNORECASE),
+    #re.compile(r".+/keymap$", re.IGNORECASE),
+    #re.compile(r".+/lang$", re.IGNORECASE),
+    re.compile(r".+/macros$", re.IGNORECASE),
+    re.compile(r".+/plugin$", re.IGNORECASE),
+    #re.compile(r".+/print$", re.IGNORECASE),
+    #re.compile(r".+/spell$", re.IGNORECASE),
+    re.compile(r".+/syntax$", re.IGNORECASE),
+    re.compile(r".+/systags$", re.IGNORECASE),
+    re.compile(r".+/view$", re.IGNORECASE)]
+    #re.compile(r".+/tools$", re.IGNORECASE),
+    #re.compile(r".+/tutor$", re.IGNORECASE)]
+
 sys.argv = [vim.eval("s:menu_root"),
     bool(int(vim.eval("s:show_files"))),
     bool(int(vim.eval("s:show_load_order"))),
+    bool(int(vim.eval("s:smart_menus"))),
     bool(int(vim.eval("s:debug_mode"))),
     MODE_MAP,
     SOURCE_LINE,
@@ -139,7 +182,9 @@ sys.argv = [vim.eval("s:menu_root"),
     COMMAND_PATTERN,
     MAPPING_PATTERN,
     ABBREV_PATTERN,
-    SCRIPTNAME_PATTERN]
+    HIGHLIGHT_PATTERN,
+    SCRIPTNAME_PATTERN,
+    VIM_DIR_PATTERNS]
 
 endpython
 
@@ -165,6 +210,7 @@ function! s:InitBundleData() " {{{1
 	let s:mappings = s:show_mappings? s:GetVimCommandOutput('map') . s:GetVimCommandOutput('map!') : ''
 	let s:abbreviations = s:show_abbreviations? s:GetVimCommandOutput('abbreviate') : ''
 	let s:functions = s:show_functions? s:GetVimCommandOutput('function') : ''
+	let s:highlights = s:show_highlights? s:GetVimCommandOutput('highlight') : ''
 endfunction
 
 function! s:RequestVimMenus() " {{{1
@@ -185,7 +231,8 @@ try:
         commands = vim.eval("s:commands"),
         mappings = vim.eval("s:mappings"),
         abbreviations = vim.eval("s:abbreviations"),
-        functions = vim.eval("s:functions"))
+        functions = vim.eval("s:functions"),
+        highlights = vim.eval("s:highlights"))
 
 except Exception:
     import traceback
